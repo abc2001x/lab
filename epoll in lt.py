@@ -1,3 +1,4 @@
+# coding: utf-8
 import socket, select
 from ipdb import set_trace
 EOL1 = b'\n\n'
@@ -38,7 +39,7 @@ try:
                print('-'*40 + str(fileno) + '\n' + requests[fileno].decode()[:-2])
             #
             if data == b'':
-               # set_trace()
+               # set_trace()处理客户端关闭请求时的信息,防止服务端程序出现close_wait
                print "receiv client close : %s "% str(fileno)
                epoll.unregister(fileno)
                try :
