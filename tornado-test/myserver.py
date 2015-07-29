@@ -4,9 +4,7 @@ from __future__ import absolute_import, division, print_function, with_statement
 
 import socket
 
-from tornado.escape import native_str
 from myconnection import MyServerConnection
-from tornado import gen
 from tornado import iostream
 from tornado.tcpserver import TCPServer
 from tornado.util import Configurable
@@ -42,8 +40,6 @@ class MyServer(TCPServer, Configurable):
 
     #建立连接后的回调
     def handle_stream(self, stream, address):
-        # context = _HTTPRequestContext(stream, address,
-        #                               self.protocol)
         conn = MyServerConnection(stream)
         self._connections.add(conn)
         conn.start_serving(self)
@@ -62,30 +58,8 @@ class _ServerRequestAdapter(object):
         self.connection = server_conn
         self.request = None
         self.delegate = server.request_callback.on_request(server_conn)
-        # if isinstance(server.request_callback,
-        #               httputil.HTTPServerConnectionDelegate):
-        #     self.delegate = server.request_callback.start_request(
-        #         server_conn, request_conn)
-        #     self._chunks = None
-        # else:
-        #     self.delegate = None
-        #     self._chunks = []
-
-
 
     def on_message(self,message):
         return self.delegate.on_message(message)
-        
 
-    def finish(self):
-        """Called after the last chunk of data has been received."""
-        pass
-
-    def on_connection_close(self):
-        """Called if the connection is closed without finishing the request.
-
-        If ``headers_received`` is called, either ``finish`` or
-        ``on_connection_close`` will be called, but not both.
-        """
-        pass
 		

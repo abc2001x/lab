@@ -2,16 +2,11 @@
 
 from __future__ import absolute_import, division, print_function, with_statement
 
-import socket
-
 from tornado.escape import native_str
 from myconnection import MyServerConnection
-from tornado import gen
-from tornado import iostream
-from tornado.tcpserver import TCPServer
-from tornado.util import Configurable
-from tornado.log import gen_log, app_log
-
+from tornado import stack_context
+from tornado.log import app_log
+from inspect import getmembers
 # class MyApplication(httputil.HTTPServerConnectionDelegate):
 class MyApplication():
 
@@ -20,34 +15,8 @@ class MyApplication():
         if isinstance(handlers,dict):
             self.handlers = handlers
 
-        
-
-    def add_handler(self):
-        pass
-
-    """Implement this interface to handle requests from `.HTTPServer`.
-
-    .. versionadded:: 4.0
-    """
     def on_request(self, server_conn):
-        """This method is called by the server when a new request has started.
-
-        :arg server_conn: is an opaque object representing the long-lived
-            (e.g. tcp-level) connection.
-        :arg request_conn: is a `.HTTPConnection` object for a single
-            request/response exchange.
-
-        This method should return a `.HTTPMessageDelegate`.
-        """
         return _RequestDispatcher(self, server_conn)
-
-    def on_close(self, server_conn):
-        """This method is called when a connection has been closed.
-
-        :arg server_conn: is a server connection that has previously been
-            passed to ``start_request``.
-        """
-        pass
 
 
 # class _RequestDispatcher(httputil.HTTPMessageDelegate):
@@ -68,23 +37,17 @@ class _RequestDispatcher():
         if self.request in app.handlers.keys():
             self.handler = app.handlers[self.request]()
             setattr(self.handler, 'write', self.server_conn.write)
+            setattr(self.handler, 'close', self.close)
+            
+            method_list = getmembers(self.handler)
+            app_log.info(' found the handler,enter the method name to execute \n list:%s'%method_list)
+
         else:
-            app_log.error('no handler dispatch')
+            app_log.error(' no handler dispatch,please enter handler\'s name again')
         return 
 
     def on_request(self,message):
-        """Called when the HTTP headers have been received and parsed.
-
-        :arg start_line: a `.RequestStartLine` or `.ResponseStartLine`
-            depending on whether this is a client or server message.
-        :arg headers: a `.HTTPHeaders` instance.
-
-        Some `.HTTPConnection` methods can only be called during
-        ``headers_received``.
-
-        May return a `.Future`; if it does the body will not be read
-        until it is done.
-        """
+        
         self.request = message
         self._find_handler()
         # return self._has_handler_instace()
@@ -99,19 +62,16 @@ class _RequestDispatcher():
             return self.on_request(message)
 
     def execute(self,func_name):
-        method = getattr(self.handler, func_name)
-        return method()
-
-
-    def finish(self):
-        """Called after the last chunk of data has been received."""
-        pass
-
-    def on_connection_close(self):
-        """Called if the connection is closed without finishing the request.
-
-        If ``headers_received`` is called, either ``finish`` or
-        ``on_connection_close`` will be called, but not both.
-        """
-        pass
+        exec_method = None
+        try:
+            exec_method = getattr(self.handler, func_name)
+            exec_method = stack_context.wrap(exec_method)
+        except Exception, e:
+            app_log.error(' no exist method to call')
+        
+        if exec_method:
+            return exec_method()
+            
+    def close(self):
+        self.server_conn.close()
 		

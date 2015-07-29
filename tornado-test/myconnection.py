@@ -1,55 +1,42 @@
+#coding=utf-8
+#
 from __future__ import absolute_import, division, print_function, with_statement
 
-import re
 
 from tornado.concurrent import Future
 from tornado.escape import native_str, utf8
 from tornado import gen
-from tornado import httputil
 from tornado import iostream
 from tornado.log import gen_log, app_log
-from tornado import stack_context
 from tornado.util import GzipDecompressor
 
 
 class MyServerConnection(object):
-    def __init__(self, stream, context=None):
-        """
-        :arg stream: an `.IOStream`
-        :arg params: a `.HTTP1ConnectionParameters` or None
-        :arg context: an opaque application-defined object that is accessible
-            as ``connection.context``
-        """
+    def __init__(self, stream):
         self.stream = stream
-        self.context = context
-        self._serving_future = None
 
         self._serving_futures = []
         self._pending_writes = []
 
     @gen.coroutine
     def close(self):
-        """Closes the connection.
 
-        Returns a `.Future` that resolves after the serving loop has exited.
-        """
-        self.stream.close()
-        # Block until the serving loop is done, but ignore any exceptions
-        # (start_serving is already responsible for logging them).
-        try:
-            yield self._serving_future
-        except Exception:
-            pass
+        def mayby_close(f):
+            futures = self._serving_futures+self._pending_writes
+            app_log.error(futures)
+            if not any(futures):
+                self.stream.close()
+
+        pending_futrues = self._serving_futures+self._pending_writes
+        if any(pending_futrues):
+            map(lambda f:f.add_done_callback(mayby_close),pending_futrues)
+        else:
+            self.stream.close()
+        
 
     def start_serving(self, delegate):
-        """Starts serving requests on this connection.
-
-        :arg delegate: a `.HTTPServerConnectionDelegate` start_request,on_close
-        in this segement is myserver
-        """
-        # assert isinstance(delegate, httputil.HTTPServerConnectionDelegate)
         self._serving_future = self._server_request_loop(delegate)
-        # Register the future on the IOLoop so its errors get logged.
+
         self.stream.io_loop.add_future(self._serving_future,
                                        lambda f: f.result())
 
@@ -59,26 +46,24 @@ class MyServerConnection(object):
         yield message_future
 
 
-
-
     @gen.coroutine
     def _server_request_loop(self, delegate):
         try:
-            # from ipdb import set_trace
-            # set_trace()
+            #get request adepter
             request_delegate = delegate.on_request(self)
-
             while True:
-                #get request adepter
                 
                 try:
                     message_future = self.stream.read_until_regex(b"\n\r?")
                     message = yield message_future
                     message = self._parse_data(message)
-                except (iostream.StreamClosedError, iostream.UnsatisfiableReadError):
-                    app_log.error("iostream.StreamClosedError, iostream.UnsatisfiableReadError")
+
+                except (iostream.StreamClosedError, 
+                        iostream.UnsatisfiableReadError):
+                    app_log.error(' close the connect')
                     self.close()
                     return
+
                 except Exception:
 
                     gen_log.error("Uncaught exception", exc_info=True)
@@ -86,32 +71,11 @@ class MyServerConnection(object):
                     return
                 
                 ret = request_delegate.on_message(message)
+                #如果是异步执行的方法,保存future,用于确保close时,所有future都已完成
                 if isinstance(ret, Future):
                     ret.add_done_callback(lambda f:self._serving_futures.remove(f))
                     self._serving_futures.append(ret)
 
-                # conn = MyConnection(self.stream)
-                # request_delegate = delegate.start_request(self, conn)
-                # try:
-                #     ret = yield conn.read_response(request_delegate)
-                # except (iostream.StreamClosedError,
-                #         iostream.UnsatisfiableReadError):
-                #     return
-                # except _QuietException:
-                #     # This exception was already logged.
-                #     conn.close()
-                #     return
-                # except Exception:
-                #     gen_log.error("Uncaught exception", exc_info=True)
-                #     conn.close()
-                #     return
-                # if not ret:
-                #     return
-
-                # if not self.header_received :
-                #     self.header_received = True
-
-                # yield gen.moment
         finally:
             delegate.on_close(self)
     def _parse_data(self, data):
@@ -121,23 +85,3 @@ class MyServerConnection(object):
         _pending_write = self.stream.write(chunk)
         self._pending_writes.append(_pending_write)
         _pending_write.add_done_callback(lambda f:self._pending_writes.remove(f))
-
-# class MyConnection(object):
-#     """docstring for MyConnection"""
-#     def __init__(self, stream):
-#         self.stream = stream
-
-#     def write():
-#         pass
-
-#     def close():
-#         pass
-    
-#     @gen.concurrent
-#     def read_header(self,delegate):
-#         pass
-
-#     @gen.concurrent
-#     def read_response(self,delegate):
-#         pass
-
