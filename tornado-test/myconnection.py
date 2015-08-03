@@ -18,7 +18,6 @@ class MyServerConnection(object):
         self._serving_futures = []
         self._pending_writes = []
 
-    @gen.coroutine
     def close(self):
 
         def mayby_close(f):
@@ -39,12 +38,6 @@ class MyServerConnection(object):
 
         self.stream.io_loop.add_future(self._serving_future,
                                        lambda f: f.result())
-
-    @gen.coroutine
-    def read_message(self):
-        message_future = self.stream.read_until_regex(b"\r?\n\r?\n")
-        yield message_future
-
 
     @gen.coroutine
     def _server_request_loop(self, delegate):
@@ -78,6 +71,7 @@ class MyServerConnection(object):
 
         finally:
             delegate.on_close(self)
+    
     def _parse_data(self, data):
         return native_str(data.decode('latin1')).strip(" \r\n")
 
